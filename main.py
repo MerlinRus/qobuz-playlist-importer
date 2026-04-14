@@ -41,8 +41,10 @@ class QobuzDirect:
 
     def _generate_signature(self, method, params, timestamp):
         method_clean = method.replace("/", "")
-        keys = sorted(params.keys())
-        param_str = "".join([f"{k}{params[k]}" for k in keys if k not in ["request_sig", "app_id"]])
+        # В подписи участвуют только параметры, отсортированные по ключу.
+        # Исключаем служебные поля: request_sig, app_id, user_auth_token и request_ts (т.к. он добавляется отдельно в конце).
+        keys = sorted([k for k in params.keys() if k not in ["request_sig", "app_id", "user_auth_token", "request_ts"]])
+        param_str = "".join([f"{k}{params[k]}" for k in keys])
         sig_base = f"{method_clean}{param_str}{timestamp}{self.app_secret}"
         return hashlib.md5(sig_base.encode()).hexdigest()
 
@@ -51,21 +53,20 @@ class QobuzDirect:
             params = {}
             
         use_app_id = current_app_id or self.app_id
-        url = f"{BASE_URL}{method_path}?app_id={use_app_id}"
         
-        for k, v in params.items():
-            url += f"&{k}={requests.utils.quote(str(v))}"
+        # Подготавливаем параметры запроса для автоматической сборки URL через requests
+        query_params = params.copy()
+        query_params["app_id"] = use_app_id
         
-        if self.auth_token and "user_auth_token" not in url:
-            url += f"&user_auth_token={self.auth_token}"
+        if self.auth_token and "user_auth_token" not in query_params:
+            query_params["user_auth_token"] = self.auth_token
 
-        headers = {
-            "X-App-Id": use_app_id
-        }
+        headers = {"X-App-Id": use_app_id}
         if self.auth_token:
             headers["X-User-Auth-Token"] = self.auth_token
 
-        response = self.session.get(url, headers=headers)
+        url = f"{BASE_URL}{method_path}"
+        response = self.session.get(url, params=query_params, headers=headers)
         return response.json()
 
     def login(self, email, password):
@@ -83,14 +84,19 @@ class QobuzDirect:
             if not test_app_id: continue
             
             timestamp = str(int(time.time()))
+            # Базовые параметры для подписи
             params = {
                 "username": email,
-                "password": hashed_password,
-                "request_ts": timestamp
+                "password": hashed_password
             }
-            params["request_sig"] = self._generate_signature(method, params, timestamp)
+            sig = self._generate_signature(method, params, timestamp)
             
-            data = self._request(method, params, current_app_id=test_app_id)
+            # Полный набор параметров для запроса
+            request_params = params.copy()
+            request_params["request_ts"] = timestamp
+            request_params["request_sig"] = sig
+            
+            data = self._request(method, request_params, current_app_id=test_app_id)
             if 'user_auth_token' in data and 'user' in data:
                 self.app_id = test_app_id
                 self.auth_token = data['user_auth_token']
