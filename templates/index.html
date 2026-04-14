@@ -21,19 +21,17 @@
                 <!-- Form Section -->
                 <div class="md:w-1/2">
                     <form id="importForm" class="space-y-5">
-                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                            <div>
-                                <label for="email" class="block text-sm font-medium text-gray-700">Email (Qobuz)</label>
-                                <input type="email" id="email" name="email" required placeholder="Ваш Email"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
-                            </div>
-                            <div>
-                                <label for="password" class="block text-sm font-medium text-gray-700">Пароль</label>
-                                <input type="password" id="password" name="password" required placeholder="Ваш пароль"
-                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
-                            </div>
+                        <div>
+                            <label for="token" class="block text-sm font-medium text-gray-700">Qobuz Token (user_auth_token)</label>
+                            <input type="password" id="token" name="token" required placeholder="Например: a1b2c3d4..."
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
                         </div>
-                        <p class="mt-1 text-xs text-gray-500">Авторизация происходит напрямую, пароль нигде не сохраняется (кроме вашего браузера).</p>
+                        <div>
+                            <label for="app_id" class="block text-sm font-medium text-gray-700">App ID (Опционально)</label>
+                            <input type="text" id="app_id" name="app_id" placeholder="Например: 950096963"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Значения из Local Storage браузера. Сохраняются только у вас.</p>
 
                         <div>
                             <label for="playlist_name" class="block text-sm font-medium text-gray-700">Название плейлиста</label>
@@ -68,17 +66,17 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const form = document.getElementById('importForm');
-            const emailInput = document.getElementById('email');
-            const passwordInput = document.getElementById('password');
+            const tokenInput = document.getElementById('token');
+            const appIdInput = document.getElementById('app_id');
             const consoleDiv = document.getElementById('console');
             const submitBtn = document.getElementById('submitBtn');
             let eventSource = null;
 
             // Восстановление данных
-            const savedEmail = localStorage.getItem('qobuz_email');
-            const savedPassword = localStorage.getItem('qobuz_password');
-            if (savedEmail) emailInput.value = savedEmail;
-            if (savedPassword) passwordInput.value = savedPassword;
+            const savedToken = localStorage.getItem('qobuz_token');
+            const savedAppId = localStorage.getItem('qobuz_app_id');
+            if (savedToken) tokenInput.value = savedToken;
+            if (savedAppId) appIdInput.value = savedAppId;
 
             function logMsg(msg, isError = false, isSuccess = false) {
                 const p = document.createElement('div');
@@ -99,16 +97,16 @@
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
-                const email = emailInput.value.trim();
-                const password = passwordInput.value;
+                const token = tokenInput.value.trim();
+                const app_id = appIdInput.value.trim();
                 const playlistName = document.getElementById('playlist_name').value.trim();
                 const tracks = document.getElementById('tracks').value;
 
-                if (!email || !password || !tracks) return;
+                if (!token || !tracks) return;
 
-                // Сохраняем логин для удобства
-                localStorage.setItem('qobuz_email', email);
-                localStorage.setItem('qobuz_password', password);
+                // Сохраняем значения для удобства
+                localStorage.setItem('qobuz_token', token);
+                localStorage.setItem('qobuz_app_id', app_id);
 
                 submitBtn.disabled = true;
                 submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
@@ -126,7 +124,7 @@
                     const res = await fetch('/api/start_import', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, password, playlist_name: playlistName, tracks })
+                        body: JSON.stringify({ token, app_id, playlist_name: playlistName, tracks })
                     });
                     
                     const data = await res.json();

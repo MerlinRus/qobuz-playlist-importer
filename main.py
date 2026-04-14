@@ -28,8 +28,8 @@ APP_SECRET = clean_env('QOBUZ_APP_SECRET', '5929d2b8b9354226a0a73d327f918991')
 BASE_URL = "https://www.qobuz.com/api.json/0.2/"
 
 class QobuzDirect:
-    def __init__(self, initial_app_id, app_secret):
-        self.auth_token = None
+    def __init__(self, token, initial_app_id, app_secret):
+        self.auth_token = token
         self.app_id = initial_app_id
         self.app_secret = app_secret
         self.session = requests.Session()
@@ -70,42 +70,25 @@ class QobuzDirect:
         response = self.session.get(url, headers=headers)
         return response.json()
 
-    def login(self, email, password):
-        """Авторизация по email и паролю, автоматический подбор App ID"""
+    def get_user_info(self, provided_app_id=None):
+        """Проверка токена и автоматический подбор App ID"""
         known_app_ids = [
-            self.app_id, '950096963', '798273057', '579939560', 
+            provided_app_id, self.app_id, '950096963', '798273057', '579939560', 
             '100000000', '306000000', '274246104'
         ]
         
-        method = "user/login"
-        hashed_password = hashlib.md5(password.encode('utf-8')).hexdigest()
         last_error = None
-        
         for test_app_id in known_app_ids:
             if not test_app_id: continue
             
-            timestamp = str(int(time.time()))
-            # Базовые параметры для подписи
-            params = {
-                "username": email,
-                "password": hashed_password
-            }
-            sig = self._generate_signature(method, params, timestamp)
-            
-            # Полный набор параметров для запроса
-            request_params = params.copy()
-            request_params["request_ts"] = timestamp
-            request_params["request_sig"] = sig
-            
-            data = self._request(method, request_params, current_app_id=test_app_id)
-            if 'user_auth_token' in data and 'user' in data:
+            data = self._request("user/get", current_app_id=test_app_id)
+            if 'display_name' in data:
                 self.app_id = test_app_id
-                self.auth_token = data['user_auth_token']
-                return True, f"Успешный вход: {data['user']['display_name']}"
+                return True, f"Авторизован как: {data['display_name']} (App ID: {test_app_id})"
             else:
                 last_error = data
                 
-        error_msg = "Ошибка входа. "
+        error_msg = "Ошибка токена: не удалось авторизоваться. Проверьте ваш токен. "
         if last_error:
             if last_error.get('message'):
                 error_msg += f"Ответ Qobuz: {last_error.get('message')}"
@@ -172,8 +155,8 @@ templates = Jinja2Templates(directory="templates")
 jobs = {}
 
 class ImportRequest(BaseModel):
-    email: str
-    password: str
+    token: str
+    app_id: str
     playlist_name: str
     tracks: str
 
@@ -192,8 +175,8 @@ async def start_import(req: ImportRequest):
         raise HTTPException(status_code=400, detail="Список треков пуст")
     
     jobs[job_id] = {
-        "email": req.email,
-        "password": req.password,
+        "token": req.token,
+        "app_id": req.app_id,
         "playlist_name": req.playlist_name,
         "tracks": track_list
     }
@@ -207,20 +190,20 @@ async def process_import(job_id: str):
         yield json.dumps({"status": "error", "msg": "Задача не найдена", "fatal": True})
         return
 
-    email = job_data["email"]
-    password = job_data["password"]
+    token = job_data["token"]
+    user_app_id = job_data["app_id"]
     playlist_name = job_data["playlist_name"]
     track_names = job_data["tracks"]
     
     del jobs[job_id] # Удаляем задачу из памяти
     
-    client = QobuzDirect(APP_ID, APP_SECRET)
+    client = QobuzDirect(token, APP_ID, APP_SECRET)
     
-    yield json.dumps({"status": "info", "msg": "Выполняю вход в Qobuz..."})
+    yield json.dumps({"status": "info", "msg": "Проверяю токен и подбираю рабочий App ID..."})
     await asyncio.sleep(0.1)
 
     # Используем asyncio.to_thread для синхронных запросов
-    success, auth_msg = await asyncio.to_thread(client.login, email, password)
+    success, auth_msg = await asyncio.to_thread(client.get_user_info, user_app_id)
     
     if not success:
         yield json.dumps({"status": "error", "msg": auth_msg, "fatal": True})
