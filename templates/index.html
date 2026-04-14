@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-width=1.0">
+    <title>Qobuz Playlist Importer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800 font-sans">
+    <div class="max-w-4xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
+        <div class="bg-white rounded-lg shadow-xl overflow-hidden">
+            <div class="px-6 py-8 border-b border-gray-200 bg-gray-50">
+                <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-3">
+                    <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                    Qobuz Importer
+                </h1>
+                <p class="mt-2 text-sm text-gray-500">Автоматический поиск и создание плейлиста из списка треков.</p>
+            </div>
+
+            <div class="p-6 md:flex md:gap-8">
+                <!-- Form Section -->
+                <div class="md:w-1/2">
+                    <form id="importForm" class="space-y-5">
+                        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                            <div>
+                                <label for="email" class="block text-sm font-medium text-gray-700">Email (Qobuz)</label>
+                                <input type="email" id="email" name="email" required placeholder="Ваш Email"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
+                            </div>
+                            <div>
+                                <label for="password" class="block text-sm font-medium text-gray-700">Пароль</label>
+                                <input type="password" id="password" name="password" required placeholder="Ваш пароль"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
+                            </div>
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500">Авторизация происходит напрямую, пароль нигде не сохраняется (кроме вашего браузера).</p>
+
+                        <div>
+                            <label for="playlist_name" class="block text-sm font-medium text-gray-700">Название плейлиста</label>
+                            <input type="text" id="playlist_name" name="playlist_name" required value="Imported from Ya.Music"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2">
+                        </div>
+
+                        <div>
+                            <label for="tracks" class="block text-sm font-medium text-gray-700">Список треков</label>
+                            <textarea id="tracks" name="tracks" rows="8" required placeholder="Artist - Track Name&#10;Artist - Track Name"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border p-2 font-mono text-sm"></textarea>
+                        </div>
+
+                        <button type="submit" id="submitBtn"
+                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                            Начать импорт
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Console Section -->
+                <div class="mt-8 md:mt-0 md:w-1/2 flex flex-col">
+                    <h3 class="text-sm font-medium text-gray-700 mb-2">Лог выполнения</h3>
+                    <div id="console" class="flex-1 bg-gray-900 rounded-md p-4 overflow-y-auto font-mono text-xs text-gray-300 h-64 md:h-auto shadow-inner border border-gray-800">
+                        <div class="text-gray-500 italic">Ожидание запуска...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('importForm');
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+            const consoleDiv = document.getElementById('console');
+            const submitBtn = document.getElementById('submitBtn');
+            let eventSource = null;
+
+            // Восстановление данных
+            const savedEmail = localStorage.getItem('qobuz_email');
+            const savedPassword = localStorage.getItem('qobuz_password');
+            if (savedEmail) emailInput.value = savedEmail;
+            if (savedPassword) passwordInput.value = savedPassword;
+
+            function logMsg(msg, isError = false, isSuccess = false) {
+                const p = document.createElement('div');
+                p.textContent = msg;
+                p.className = "mb-1 leading-relaxed";
+                if (isError) p.classList.add('text-red-400');
+                if (isSuccess) p.classList.add('text-green-400');
+                
+                // Удаляем плейсхолдер если есть
+                if (consoleDiv.firstElementChild && consoleDiv.firstElementChild.classList.contains('italic')) {
+                    consoleDiv.innerHTML = '';
+                }
+
+                consoleDiv.appendChild(p);
+                consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            }
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const email = emailInput.value.trim();
+                const password = passwordInput.value;
+                const playlistName = document.getElementById('playlist_name').value.trim();
+                const tracks = document.getElementById('tracks').value;
+
+                if (!email || !password || !tracks) return;
+
+                // Сохраняем логин для удобства
+                localStorage.setItem('qobuz_email', email);
+                localStorage.setItem('qobuz_password', password);
+
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                consoleDiv.innerHTML = ''; // Очистка консоли
+                
+                // Закрываем предыдущее соединение если есть
+                if (eventSource) {
+                    eventSource.close();
+                }
+
+                logMsg('> Подготовка к импорту...', false, false);
+
+                try {
+                    // Отправляем первоначальные данные (POST)
+                    const res = await fetch('/api/start_import', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password, playlist_name: playlistName, tracks })
+                    });
+                    
+                    const data = await res.json();
+                    
+                    if (!res.ok) {
+                        throw new Error(data.detail || 'Ошибка при запуске');
+                    }
+
+                    const jobId = data.job_id;
+
+                    // Подключаемся к SSE для получения логов
+                    eventSource = new EventSource(`/api/stream_logs/${jobId}`);
+                    
+                    eventSource.onmessage = function(event) {
+                        const parsed = JSON.parse(event.data);
+                        
+                        if (parsed.status === 'done') {
+                            logMsg('\n' + parsed.msg, false, true);
+                            eventSource.close();
+                            submitBtn.disabled = false;
+                            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        } else if (parsed.status === 'error') {
+                            logMsg(parsed.msg, true, false);
+                            if (parsed.fatal) {
+                                eventSource.close();
+                                submitBtn.disabled = false;
+                                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                            }
+                        } else if (parsed.status === 'info') {
+                            logMsg(parsed.msg, false, false);
+                        } else if (parsed.status === 'not_found') {
+                            logMsg(parsed.msg, true, false);
+                        } else if (parsed.status === 'found') {
+                            logMsg(parsed.msg, false, true);
+                        }
+                    };
+
+                    eventSource.onerror = function() {
+                        logMsg('[Система] Соединение с сервером прервано.', true);
+                        eventSource.close();
+                        submitBtn.disabled = false;
+                        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    };
+
+                } catch (err) {
+                    logMsg(`Ошибка: ${err.message}`, true);
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
