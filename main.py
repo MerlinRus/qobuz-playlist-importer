@@ -143,7 +143,9 @@ class QobuzDirect:
         params["request_sig"] = self._generate_signature(method, params, timestamp)
         
         data = self._request(method, params)
-        return data.get('status') == 'success' or 'tracks' in data
+        # API может вернуть 'status': 'success', список треков 'tracks' 
+        # или просто обновленный объект плейлиста, где есть 'id' и 'tracks_count'
+        return data.get('status') == 'success' or 'tracks' in data or ('id' in data and 'tracks_count' in data)
 
 
 # --- FastAPI Application ---
