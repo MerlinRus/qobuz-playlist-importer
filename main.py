@@ -54,19 +54,20 @@ class QobuzDirect:
             
         use_app_id = current_app_id or self.app_id
         
-        # Подготавливаем параметры запроса для автоматической сборки URL через requests
-        query_params = params.copy()
-        query_params["app_id"] = use_app_id
+        # Строим URL вручную, чтобы app_id был ПЕРВЫМ, иначе Qobuz API возвращает 'Invalid or missing app_id'
+        url = f"{BASE_URL}{method_path}?app_id={use_app_id}"
         
-        if self.auth_token and "user_auth_token" not in query_params:
-            query_params["user_auth_token"] = self.auth_token
+        for k, v in params.items():
+            url += f"&{k}={requests.utils.quote(str(v))}"
+            
+        if self.auth_token and "user_auth_token" not in url:
+            url += f"&user_auth_token={self.auth_token}"
 
         headers = {"X-App-Id": use_app_id}
         if self.auth_token:
             headers["X-User-Auth-Token"] = self.auth_token
 
-        url = f"{BASE_URL}{method_path}"
-        response = self.session.get(url, params=query_params, headers=headers)
+        response = self.session.get(url, headers=headers)
         return response.json()
 
     def login(self, email, password):
