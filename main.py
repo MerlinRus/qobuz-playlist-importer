@@ -77,6 +77,7 @@ class QobuzDirect:
         
         method = "user/login"
         hashed_password = hashlib.md5(password.encode('utf-8')).hexdigest()
+        last_error = None
         
         for test_app_id in known_app_ids:
             if not test_app_id: continue
@@ -94,8 +95,17 @@ class QobuzDirect:
                 self.app_id = test_app_id
                 self.auth_token = data['user_auth_token']
                 return True, f"Успешный вход: {data['user']['display_name']}"
+            else:
+                last_error = data
                 
-        return False, "Ошибка входа: неверный email/пароль или недоступный App ID."
+        error_msg = "Ошибка входа. "
+        if last_error:
+            if last_error.get('message'):
+                error_msg += f"Ответ Qobuz: {last_error.get('message')}"
+            else:
+                error_msg += f"Ответ сервера: {last_error}"
+                
+        return False, error_msg
 
     def search_track(self, query):
         method = "catalog/search"
